@@ -1,122 +1,168 @@
 # 🫁 Lung Disease Detection using Deep Learning
 
-**Two-Stage Medical Image Classification using PyTorch and Flask**
+A two-stage CNN web application that first checks if an uploaded image is a chest X-ray, then classifies it as NORMAL or PNEUMONIA, and finally explains the prediction using Grad-CAM.
 
-![Python](https://img.shields.io/badge/Python-3.11-blue)
-![PyTorch](https://img.shields.io/badge/PyTorch-CNN-red)
-![Flask](https://img.shields.io/badge/Flask-Web%20App-black)
-![License](https://img.shields.io/badge/Use-Educational%20%2F%20Research-lightgrey)
+**The idea of this project is simple: validate first, classify second, explain the prediction.**
 
-> **Disclaimer:** This is an educational and research project. It is **not** a medical device, it is **not** clinically validated, and it must **not** be used for real diagnosis or treatment decisions.
+| Stage | Question it answers |
+|---|---|
+| Model 1 | Is this image a chest X-ray? |
+| Model 2 | If yes, is it NORMAL or PNEUMONIA? |
+| Grad-CAM | Which regions influenced that prediction? |
+
+> **Medical Disclaimer**
+> This is an educational and research project. It is not a medical device, it is not clinically validated, and it must not be used for real patient diagnosis or treatment decisions. It is not a replacement for a radiologist or a doctor.
 
 ---
 
 ## Table of Contents
 
-1. [Overview](#1-overview)
-2. [Why Two Models](#2-why-two-models)
-3. [System Architecture](#3-system-architecture)
-4. [Model 1: Chest X-ray Validator](#4-model-1-chest-x-ray-validator)
-5. [Model 2: Pneumonia Classifier](#5-model-2-pneumonia-classifier)
-6. [Datasets](#6-datasets)
-7. [CNN Architecture](#7-cnn-architecture)
-8. [Image Preprocessing](#8-image-preprocessing)
-9. [Training Setup](#9-training-setup)
-10. [Results](#10-results)
-11. [Flask Deployment](#11-flask-deployment)
-12. [Request Flow](#12-request-flow)
-13. [Project Structure](#13-project-structure)
-14. [Installation](#14-installation)
-15. [Running the Application](#15-running-the-application)
-16. [Example Prediction Flow](#16-example-prediction-flow)
-17. [Confidence Score](#17-confidence-score)
-18. [Future Scope](#18-future-scope)
-19. [Limitations](#19-limitations)
-20. [Technologies Used](#20-technologies-used)
-21. [Skills and Concepts Demonstrated](#21-skills-and-concepts-demonstrated)
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Why Two Models?](#why-two-models)
+- [System Architecture](#system-architecture)
+- [Model 1 — Chest X-ray Validator](#model-1--chest-x-ray-validator)
+- [Model 2 — Pneumonia Classifier](#model-2--pneumonia-classifier)
+- [CNN Architecture](#cnn-architecture)
+- [Image Preprocessing](#image-preprocessing)
+- [Training Setup](#training-setup)
+- [Grad-CAM Explainability](#grad-cam-explainability)
+- [Application Workflow](#application-workflow)
+- [Web Interface](#web-interface)
+- [Project Structure](#project-structure)
+- [Dataset Structure](#dataset-structure)
+- [Installation](#installation)
+- [Running the Application](#running-the-application)
+- [Example Prediction Flow](#example-prediction-flow)
+- [Results](#results)
+- [Confidence Score](#confidence-score)
+- [Limitations](#limitations)
+- [Future Scope](#future-scope)
+- [Technologies Used](#technologies-used)
+- [Skills and Concepts Demonstrated](#skills-and-concepts-demonstrated)
+- [Disclaimer](#disclaimer)
+- [Author](#author)
 
 ---
 
-## 1. Overview
+## Overview
 
-This project is a deep learning based image classification system that detects **pneumonia** from **chest X-ray images**.
+This project is a deep learning web application for chest X-ray image classification. The user uploads an image through a Flask web page. The application then does three things:
 
-Instead of sending every uploaded image straight into the pneumonia classifier, the system uses a **two-stage model architecture**:
+1. It checks whether the uploaded image is really a chest X-ray.
+2. If it is, it classifies the X-ray as NORMAL or PNEUMONIA and gives a confidence score.
+3. It generates a Grad-CAM image that shows which parts of the X-ray influenced the prediction.
 
-1. **Model 1** checks what kind of image was uploaded — a chest X-ray, or something else.
-2. If the image is a valid chest X-ray, it is passed to **Model 2**.
-3. **Model 2** classifies the X-ray as **NORMAL** or **PNEUMONIA**.
-4. A **Flask** web application shows the prediction along with a confidence score.
+If the uploaded image is not a chest X-ray, the image is rejected and the user is asked to upload a chest X-ray. In that case the pneumonia model never runs.
 
-Both models are custom CNNs written from scratch in PyTorch. They are small on purpose — about **11,486 parameters each** — so they train quickly on a laptop and run on CPU during inference.
-
-The design is also meant to grow. A planned next step is a **brain tumor detection** model, where Model 1 becomes a general image router that sends chest X-rays to one specialist model and brain scans to another.
+Both CNN models were written from scratch in PyTorch. The application runs locally.
 
 ---
 
-## 2. Why Two Models
+## Key Features
 
-A single model could technically be trained to handle every category at once. This project splits the job into two models for practical reasons:
-
-- **Separates validation from diagnosis.** Deciding "is this even a chest X-ray?" is a different problem from "does this X-ray show pneumonia?"
-- **Keeps each model specialised.** Each network only has to learn one task, which helps maintain the performance of both.
-- **Stops irrelevant images from reaching the classifier.** Without a gatekeeper, a photo of a car would still get a confident "NORMAL" or "PNEUMONIA" label, because the pneumonia model has only ever seen those two classes.
-- **Easier to maintain.** Either model can be retrained or replaced on its own.
-- **Easier to extend.** New medical image types can be added by training a new specialist model and teaching Model 1 to route to it.
-
-> Note: two models do not automatically mean higher accuracy. The benefit here is specialisation, input validation, and a structure that is easier to extend.
+- Two-stage CNN pipeline: input validation, then disease classification
+- Rejects images that are not chest X-rays
+- NORMAL vs PNEUMONIA classification with a confidence score
+- Grad-CAM visual explanation for the pneumonia model
+- Grad-CAM image is generated in memory and sent to the browser as Base64, not saved to disk
+- Simple Flask web interface for upload and results
+- Small custom CNN models (approximately 11,486 parameters each), no pretrained backbones
 
 ---
 
-## 3. System Architecture
+## Why Two Models?
+
+A single pneumonia classifier only knows two classes: NORMAL and PNEUMONIA. If someone uploads a photo of a car, that model will still output one of those two labels, because it has no other option. That result would be meaningless.
+
+Model 1 solves this by acting as a gate.
+
+**1. Input validation**
+Model 1 checks whether the uploaded image is actually a chest X-ray before anything else happens.
+
+**2. Task specialization**
+Model 1 learns image-type classification. Model 2 only focuses on NORMAL vs PNEUMONIA. Each model has one job.
+
+**3. Preventing irrelevant predictions**
+Unrelated images are stopped early instead of being forced into a disease label.
+
+**4. Easier maintenance**
+Each model can be retrained, replaced, or improved on its own without touching the other.
+
+**5. Future scalability**
+The same gating idea can later route other medical image types to other models.
+
+> Note: using two models does not automatically improve accuracy. The benefit is validation, specialization, and modularity.
+
+---
+
+## System Architecture
 
 ```mermaid
 flowchart TD
-    A["User uploads an image"] --> B["Flask web application"]
-    B --> C["Model 1: chest X-ray validator"]
-    C -->|"Chest X-ray"| D["Model 2: pneumonia classifier"]
-    C -->|"Other / unsupported"| E["Reject and ask for a chest X-ray"]
-    D --> F{"Prediction"}
-    F -->|"NORMAL"| G["NORMAL + confidence"]
-    F -->|"PNEUMONIA"| H["PNEUMONIA + confidence"]
-    C -. "Future extension" .-> I["Brain scan"]
-    I -. "Planned" .-> J["Model 3: brain tumor detection"]
+    A[User uploads image] --> B[Flask route /checker]
+    B --> C[Read image and convert to RGB]
+    C --> D[Preprocessing: resize, crop, tensor, normalize]
+    D --> E[Model 1 - Net_1]
+    E --> F{Is it a chest X-ray?}
+    F -- Others --> G[Reject image<br/>Ask user to upload a chest X-ray]
+    F -- chest_xray --> H[Model 2 - Net]
+    H --> I[NORMAL or PNEUMONIA + confidence]
+    I --> J[Grad-CAM on Model 2]
+    J --> K[Overlay heatmap on X-ray]
+    K --> L[Encode images to Base64 in memory]
+    L --> M[Render index.html]
+    M --> N[User sees prediction, confidence, and Grad-CAM]
 ```
 
 ---
 
-## 4. Model 1: Chest X-ray Validator
+## Model 1 — Chest X-ray Validator
 
-**File:** `src/xray_detector_model.py` (class `Net_1`) · **Weights:** `models/xray_detector.pth`
+**Purpose:** decide whether an uploaded image is a chest X-ray or some other kind of image.
 
-**Purpose:** decide whether an uploaded image is a chest X-ray or an unrelated image.
+| Item | Value |
+|---|---|
+| Python class | `Net_1` |
+| File | `src/xray_detector_model.py` |
+| Weights | `models/xray_detector.pth` |
+| Classes | `Others`, `chest_xray` |
+| Test accuracy | 99.96% (2,490 of 2,491 test images) |
 
-**Classes:** `Others`, `chest_xray`
+### Dataset
 
-| Split | Chest X-ray | Others | Total |
+| Split | chest_xray | Others | Total |
 |---|---|---|---|
 | Train | 4,686 | 5,281 | 9,965 |
 | Test | 1,172 | 1,321 | 2,491 |
 | **Total** | **5,858** | **6,602** | **12,456** |
 
-**Test accuracy:** **99.96%** (2,490 correct out of 2,491 test images)
+### Role in the pipeline
 
-This model acts as a gatekeeper. Anything it labels as `Others` is rejected before it ever reaches the pneumonia classifier:
-
-```text
-Photo of a car  → Model 1 → Others     → Rejected, user is asked for a chest X-ray
-Chest X-ray     → Model 1 → chest_xray → Sent on to Model 2
+```
+Uploaded image
+      ↓
+   Model 1
+      ↓
+Is it a chest X-ray?
+      ├── Others     → reject, ask for a chest X-ray
+      └── chest_xray → send to Model 2
 ```
 
 ---
 
-## 5. Model 2: Pneumonia Classifier
+## Model 2 — Pneumonia Classifier
 
-**File:** `src/model.py` (class `Net`) · **Weights:** `models/trained_model.pth`
+**Purpose:** classify a confirmed chest X-ray as NORMAL or PNEUMONIA.
 
-**Purpose:** classify a confirmed chest X-ray as normal or pneumonia. It only runs after Model 1 has approved the image.
+| Item | Value |
+|---|---|
+| Python class | `Net` |
+| File | `src/model.py` |
+| Weights | `models/trained_model.pth` |
+| Classes | `NORMAL`, `PNEUMONIA` |
 
-**Classes:** `NORMAL`, `PNEUMONIA`
+### Dataset
 
 | Split | NORMAL | PNEUMONIA | Total |
 |---|---|---|---|
@@ -124,24 +170,300 @@ Chest X-ray     → Model 1 → chest_xray → Sent on to Model 2
 | Test | 317 | 855 | 1,172 |
 | **Total** | **1,583** | **4,273** | **5,856** |
 
-**Test accuracy:** **95.65%** at the final epoch (1,121 correct out of 1,172), with a best test accuracy of **96.33%** during training. Training accuracy reached 96.48%.
 
-Note that the dataset is imbalanced — roughly 73% of the images are pneumonia cases — so accuracy alone does not tell the full story. Precision, recall, and a confusion matrix would give a fuller picture.
+
+## CNN Architecture
+
+Both models use custom CNN architectures written from scratch in PyTorch. They do **not** use ResNet, VGG, EfficientNet, any pretrained backbone, or transfer learning.
+
+The networks are intentionally small, with roughly **11,486 parameters** each. They are fully convolutional and use Global Average Pooling instead of large fully connected layers.
+
+### Layer flow
+
+```
+Input: 3 × 224 × 224
+
+Conv2d 3 → 8      → ReLU → BatchNorm → MaxPool
+Conv2d 8 → 20     → ReLU → BatchNorm → MaxPool
+Conv2d 20 → 10 (1×1) → ReLU → BatchNorm → MaxPool
+Conv2d 10 → 20    → ReLU → BatchNorm
+Conv2d 20 → 32 (1×1) → ReLU → BatchNorm
+Conv2d 32 → 10    → ReLU → BatchNorm
+Conv2d 10 → 10 (1×1) → ReLU → BatchNorm
+Conv2d 10 → 14    → ReLU → BatchNorm
+Conv2d 14 → 16    → ReLU → BatchNorm
+
+Global Average Pooling
+Conv2d 16 → 2
+reshape
+log_softmax
+```
+
+### What each part does
+
+| Component | What it does |
+|---|---|
+| `Conv2d` | Learns visual features from the image |
+| `1×1 Conv2d` | Changes the number of channels efficiently |
+| `ReLU` | Adds non-linearity |
+| `BatchNorm` | Helps stabilise and speed up training |
+| `MaxPool` | Reduces image size while keeping important features |
+| Global Average Pooling | Summarises feature maps without a large fully connected layer |
+| Final `Conv2d` | Produces scores for the two classes |
+| `log_softmax` | Produces log-probabilities |
 
 ---
 
-## 6. Datasets
+## Image Preprocessing
 
-| Dataset | Used by | Classes | Images |
-|---|---|---|---|
-| `Data/` | Model 2 | NORMAL, PNEUMONIA | 5,856 |
-| `model_1_dataset/` | Model 1 | chest_xray, Others | 12,456 |
+At inference time, every uploaded image goes through the same steps:
 
-Both datasets are loaded with `torchvision.datasets.ImageFolder`, which reads the class label from the folder name.
+```
+Uploaded image
+→ Convert to RGB
+→ Resize(224)
+→ CenterCrop(224 × 224)
+→ ToTensor()
+→ Normalize()
+→ Add batch dimension
+→ Model
+```
 
-The image folders are listed in `.gitignore` and are **not included in this repository** because of their size. To retrain the models, recreate this layout locally:
+Normalisation values:
 
-```text
+| Channel stat | Value |
+|---|---|
+| Mean | `[0.485, 0.456, 0.406]` |
+| Std | `[0.229, 0.224, 0.225]` |
+
+During training, extra augmentation was used:
+
+| Model | Augmentation |
+|---|---|
+| Model 1 | RandomHorizontalFlip, RandomRotation(10) |
+| Model 2 | ColorJitter, RandomHorizontalFlip, RandomRotation(10) |
+
+Test and inference data do not use random augmentation.
+
+---
+
+## Training Setup
+
+| Setting | Value |
+|---|---|
+| Framework | PyTorch |
+| Dataset loading | `torchvision.datasets.ImageFolder` |
+| Data loading | PyTorch `DataLoader` |
+| Loss function | Negative Log Likelihood Loss (`F.nll_loss`) |
+| Optimizer | SGD |
+| Learning rate | 0.01 |
+| Momentum | 0.8 |
+| Scheduler | StepLR |
+| Step size | 6 epochs |
+| Gamma | 0.5 |
+| Batch size | 32 |
+| Model 1 epochs | 25 |
+| Model 2 epochs | 20 |
+| Hardware | Apple Silicon Mac |
+| Device | PyTorch MPS where available, CPU fallback |
+
+Training and evaluation notebooks:
+
+- `notebook/model_1.ipynb` — Model 1 training, evaluation, and experiments
+- `notebook/experiment.ipynb` — Model 2 training, evaluation, and experiments
+
+---
+
+## Grad-CAM Explainability
+
+### What it is
+
+Grad-CAM is a technique that shows which regions of an image influenced a model's prediction. It produces a heatmap that is placed on top of the original image.
+
+### Why it is used here
+
+A prediction on its own does not tell you anything about how the model reached it. Grad-CAM makes the model's behaviour easier to inspect and easier to trust or question.
+
+### Where it is applied
+
+Grad-CAM is applied **only to Model 2**, the pneumonia classifier. Model 1 is used for input validation only and has no Grad-CAM output.
+
+**Target layer:** `model.convolution_block9`
+
+This layer produces the feature maps used to build the heatmap.
+
+### How it works
+
+The `generate_gradcam()` function:
+
+1. Registers a forward hook and a backward hook on the target layer
+2. Runs the model on the image
+3. Finds the predicted class and its confidence
+4. Takes the score for the predicted class and runs backpropagation
+5. Collects the stored activations and gradients
+6. Calculates gradient-based weights and builds the class activation map
+7. Applies ReLU, normalises the map, and resizes it to 224 × 224
+8. Applies an OpenCV colour map and overlays it on the original X-ray
+9. Returns the predicted class, the confidence, and the overlay image
+
+### Grad-CAM is never saved to disk
+
+This is an intentional design choice. The generated image is not written with `cv2.imwrite()` and is not stored in `static/`, `output/`, `images/`, or `uploads/`. It exists only in memory for the duration of the request.
+
+```
+Grad-CAM NumPy image
+→ PNG encoded in memory
+→ Base64 string
+→ Flask
+→ HTML
+→ Browser (Base64 data URL)
+```
+
+Because of this, the application does not create or accumulate image files on the server.
+
+### How to read the output
+
+The highlighted regions show what the model paid attention to. They do **not** prove where pneumonia is located, and they do not prove that pneumonia exists. Grad-CAM explains the model, not the patient.
+
+---
+
+## Application Workflow
+
+```
+User
+ ↓
+Upload image (JPG / PNG)
+ ↓
+Flask route /checker
+ ↓
+Read image → RGB conversion → preprocessing
+ ↓
+Model 1
+ ↓
+Is it a chest X-ray?
+ ├── NO  → Others → reject → "Please upload a chest X-ray."
+ └── YES
+      ↓
+    Model 2
+      ↓
+    NORMAL / PNEUMONIA
+      ↓
+    Confidence score
+      ↓
+    Grad-CAM
+      ↓
+    Original X-ray + Grad-CAM overlay (Base64)
+      ↓
+    Flask renders index.html
+      ↓
+    User sees the result
+```
+
+---
+
+## Web Interface
+
+The Flask application (`app.py`) provides a simple local web interface.
+
+| Item | Value |
+|---|---|
+| Home route | `/` — shows the upload page |
+| Prediction route | `/checker` — receives the image and returns the result |
+| Upload field name | `inp_file` |
+| Maximum upload size | 16 MB |
+| Example formats | JPG, PNG |
+| Typical URL | `http://127.0.0.1:5000` |
+
+There is currently no public cloud deployment. The application runs locally.
+
+### What the user sees
+
+For a valid chest X-ray, the page shows the prediction and the confidence score, followed by the model explanation section with both images side by side:
+
+```
++----------------------+----------------------+
+| Original X-ray       | Grad-CAM             |
+|                      |                      |
+|       X-ray          |   X-ray + heatmap    |
+|                      |                      |
++----------------------+----------------------+
+```
+
+The explanation text on the page is kept simple: *"Grad-CAM highlights the regions that contributed to the model's prediction."*
+
+For a rejected image, the user is asked to upload a chest X-ray instead. No prediction, confidence, or Grad-CAM is shown.
+
+---
+
+## Project Structure
+
+```
+Lung_Disease-_Detection/
+│
+├── models/
+│   ├── trained_model.pth        # Model 2 weights (pneumonia classifier)
+│   └── xray_detector.pth        # Model 1 weights (X-ray validator)
+│
+├── notebook/
+│   ├── experiment.ipynb         # Model 2 training and evaluation
+│   └── model_1.ipynb            # Model 1 training and evaluation
+│
+├── src/
+│   ├── __init__.py
+│   ├── model.py                 # Net — Model 2 CNN architecture
+│   ├── xray_detector_model.py   # Net_1 — Model 1 CNN architecture
+│   └── gradcam.py               # Grad-CAM function for Model 2
+│
+├── templates/
+│   └── index.html               # Upload form and result display
+│
+├── app.py                       # Flask app: loads models, runs inference, Base64 output
+├── requirements.txt
+├── .gitignore
+└── README.md
+```
+
+> **Note on current state:** Grad-CAM has been implemented and tested, and `src/gradcam.py` is part of the current project structure. The published GitHub repository may not yet reflect the latest Grad-CAM integration.
+
+### File-by-file
+
+| Path | Purpose |
+|---|---|
+| `models/trained_model.pth` | Trained weights for Model 2 |
+| `models/xray_detector.pth` | Trained weights for Model 1 |
+| `notebook/model_1.ipynb` | Training, evaluation, and experiments for Model 1 |
+| `notebook/experiment.ipynb` | Training, evaluation, and experiments for Model 2 |
+| `src/model.py` | The `Net` class, Model 2 architecture |
+| `src/xray_detector_model.py` | The `Net_1` class, Model 1 architecture |
+| `src/gradcam.py` | Grad-CAM explainability function for Model 2 |
+| `templates/index.html` | Frontend: upload form, prediction, confidence, Grad-CAM display |
+| `app.py` | Flask application and full inference pipeline |
+| `requirements.txt` | Python dependencies |
+| `.gitignore` | Keeps datasets and local files out of the repository |
+
+### Model loading
+
+The trained models are saved as PyTorch `state_dict` files. A `.pth` file contains only the learned weights, so the Python model class must be defined and created first to rebuild the architecture before the weights can be loaded.
+
+```python
+model = Net()
+model.load_state_dict(
+    torch.load("models/trained_model.pth", map_location="cpu")
+)
+model.eval()
+```
+
+> The repository currently has development-specific absolute model paths in `app.py`. These should be changed to project-relative paths such as `models/trained_model.pth` and `models/xray_detector.pth` so the project runs on any machine.
+
+---
+
+## Dataset Structure
+
+The datasets are **not included in this repository** because of their size. They are excluded using `.gitignore`. Both datasets use `ImageFolder`, where the folder name is the class label.
+
+**Model 2 dataset:**
+
+```
 Data/
 ├── train/
 │   ├── NORMAL/
@@ -149,7 +471,11 @@ Data/
 └── test/
     ├── NORMAL/
     └── PNEUMONIA/
+```
 
+**Model 1 dataset:**
+
+```
 model_1_dataset/
 ├── train/
 │   ├── chest_xray/
@@ -161,379 +487,224 @@ model_1_dataset/
 
 ---
 
-## 7. CNN Architecture
-
-Both models use the **same custom CNN**, built from scratch in PyTorch. There are no pre-trained backbones and **no fully connected layers** — the network is fully convolutional and ends with global average pooling.
-
-**Building blocks:**
-
-| Component | Role |
-|---|---|
-| `Conv2d` (3×3 and 1×1) | Learn visual features; 1×1 convolutions adjust the number of channels cheaply |
-| `ReLU` | Activation function that adds non-linearity |
-| `BatchNorm2d` | Batch Normalization stabilises and speeds up training by normalising intermediate activations |
-| `MaxPool2d` | Halves the height and width, keeping the strongest signals |
-| `AvgPool2d` (global average pooling) | Reduces each feature map to a small summary instead of flattening |
-| Final `Conv2d` (16 → 2) | Acts as the classifier head and produces 2 class scores |
-| `log_softmax` | Turns scores into log-probabilities, used with negative log likelihood loss |
-
-**Layer flow:**
-
-```text
-Input 3 × 224 × 224
- → Conv(3→8)   + ReLU + BN → MaxPool
- → Conv(8→20)  + ReLU + BN → MaxPool
- → Conv(20→10) 1×1 + ReLU + BN → MaxPool
- → Conv(10→20) + ReLU + BN
- → Conv(20→32) 1×1 + ReLU + BN
- → Conv(32→10) + ReLU + BN
- → Conv(10→10) 1×1 + ReLU + BN
- → Conv(10→14) + ReLU + BN
- → Conv(14→16) + ReLU + BN
- → Global Average Pooling (4×4)
- → Conv(16→2, 4×4)  →  reshape to (batch, 2)
- → log_softmax
-```
-
-**Total parameters: 11,486** per model (about 0.04 MB of weights). Small models like this train fast and are cheap to serve.
-
----
-
-## 8. Image Preprocessing
-
-Neural networks need every image in the same shape and value range, so each image goes through the same pipeline before it reaches a model.
-
-**At inference (`app.py`):**
-
-```python
-transforms.Compose([
-    transforms.Resize(224),
-    transforms.CenterCrop(224),
-    transforms.ToTensor(),
-    transforms.Normalize(
-        [0.485, 0.456, 0.406],
-        [0.229, 0.224, 0.225]
-    )
-])
-```
-
-Images are also converted to RGB, so 3-channel and grayscale files are both handled.
-
-**During training,** the same steps are used plus light data augmentation, which creates small variations of each image so the model generalises better:
-
-| Model | Extra training transforms |
-|---|---|
-| Model 1 | `RandomHorizontalFlip`, `RandomRotation(10)` |
-| Model 2 | `ColorJitter(brightness=0.10, contrast=0.1, saturation=0.10, hue=0.1)`, `RandomHorizontalFlip`, `RandomRotation(10)` |
-
-The test transform has no augmentation, so evaluation always runs on clean images.
-
----
-
-## 9. Training Setup
-
-| Setting | Value |
-|---|---|
-| Framework | PyTorch |
-| Loss function | Negative log likelihood (`F.nll_loss`) with `log_softmax` outputs |
-| Optimizer | SGD |
-| Learning rate | 0.01 |
-| Momentum | 0.8 |
-| Scheduler | `StepLR` (step_size = 6, gamma = 0.5) |
-| Batch size | 32 |
-| Data loading | `torchvision.datasets.ImageFolder` + `DataLoader` |
-| Epochs (Model 1) | 25 |
-| Epochs (Model 2) | 20 |
-| Hardware | Apple Silicon Mac using PyTorch **MPS** where available, with a CPU fallback |
-
-The learning rate starts at 0.01 and is halved every 6 epochs, so the model takes big steps early and smaller, more careful steps later.
-
-Training and evaluation code lives in the notebooks:
-
-- `notebook/model_1.ipynb` — Model 1 (chest X-ray validator)
-- `notebook/experiment.ipynb` — Model 2 (pneumonia classifier)
-
----
-
-## 10. Results
-
-| Model | Task | Dataset size | Test accuracy |
-|---|---|---|---|
-| Model 1 | Chest X-ray vs Other | 12,456 | **99.96%** |
-| Model 2 | NORMAL vs PNEUMONIA | 5,856 | **95.65%** (best epoch: 96.33%) |
-
-In plain English:
-
-- **Model 1** almost always gets the image type right — it missed 1 image out of 2,491 in the test set. Telling an X-ray apart from an everyday photo is a much easier visual task than spotting a disease, so a very high score here is expected.
-- **Model 2** correctly labelled about 96 out of every 100 test X-rays as normal or pneumonia.
-
-These numbers come from held-out test folders during development. They describe performance **on this dataset only** and say nothing about clinical performance.
-
----
-
-## 11. Flask Deployment
-
-The trained models are served through a **Flask** web application (`app.py`).
-
-What the app does:
-
-1. Serves an upload page at `/`.
-2. Receives the uploaded image at `/checker` (max upload size: 16 MB).
-3. Applies the preprocessing pipeline and adds a batch dimension.
-4. Runs **Model 1**. If the result is `Others`, the page asks the user to upload a chest X-ray instead.
-5. If the image is a chest X-ray, runs **Model 2** on the same tensor.
-6. Converts the log-probabilities with `torch.exp`, takes the highest one as the prediction, and turns it into a confidence percentage.
-7. Renders the prediction and confidence back into `templates/index.html`.
-
-**Model loading.** Weights are saved in PyTorch's `state_dict` format and loaded into the model class at startup:
-
-```python
-model = Net()
-model.load_state_dict(torch.load("models/trained_model.pth", map_location="cpu"))
-model.eval()
-```
-
-The `.pth` file holds only the learned weights, so the matching class definition in `src/` is always needed to rebuild the network.
-
----
-
-## 12. Request Flow
-
-```mermaid
-flowchart TD
-    A["Browser: form POST to /checker"] --> B["Flask reads file field inp_file"]
-    B --> C["Preprocess: RGB, resize, crop, tensor, normalize"]
-    C --> D["Model 1 inference"]
-    D -->|"Others"| E["Render index.html with name=Others"]
-    D -->|"chest_xray"| F["Model 2 inference"]
-    F --> G["prediction + confidence"]
-    G --> H["Render index.html with the result"]
-```
-
-The Flask view passes these values to the template, and Jinja renders them into the result card:
-
-```html
-<div class="result"
-     data-prediction="{{ prediction }}"
-     data-confidence="{{ confidence }}">
-```
-
----
-
-## 13. Project Structure
-
-```text
-Lung_Disease-_Detection/
-│
-├── models/
-│   ├── trained_model.pth          # Model 2 weights (pneumonia classifier)
-│   └── xray_detector.pth          # Model 1 weights (chest X-ray validator)
-│
-├── notebook/
-│   ├── experiment.ipynb           # Model 2: data exploration, training, evaluation
-│   └── model_1.ipynb              # Model 1: data exploration, training, evaluation
-│
-├── src/
-│   ├── __init__.py
-│   ├── model.py                   # Net       — pneumonia classifier architecture
-│   └── xray_detector_model.py     # Net_1     — chest X-ray validator architecture
-│
-├── templates/
-│   └── index.html                 # Upload page and result card
-│
-├── app.py                         # Flask application
-├── requirements.txt               # Python dependencies
-├── .gitignore
-└── README.md
-```
-
-| Path | Purpose |
-|---|---|
-| `models/` | Trained weights in `state_dict` format |
-| `notebook/` | Preprocessing, training, evaluation and experiments |
-| `src/` | Reusable model definitions imported by the Flask app |
-| `templates/` | Flask HTML templates |
-| `app.py` | Main Flask application and inference logic |
-
-Datasets are intentionally excluded from version control — see [Datasets](#6-datasets).
-
----
-
-## 14. Installation
+## Installation
 
 **1. Clone the repository**
 
 ```bash
 git clone https://github.com/vineetbathla8-boop/Lung_Disease-_Detection.git
+```
+
+**2. Enter the directory**
+
+```bash
 cd Lung_Disease-_Detection
 ```
 
-**2. Create and activate a virtual environment**
+**3. Create a virtual environment**
+
+```bash
+python -m venv .venv
+```
+
+**4. Activate the environment**
 
 macOS / Linux:
 
 ```bash
-python -m venv .venv
 source .venv/bin/activate
 ```
 
 Windows:
 
 ```bash
-python -m venv .venv
 .venv\Scripts\activate
 ```
 
-**3. Install the dependencies**
+**5. Install the requirements**
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Core libraries used: Python, PyTorch, Torchvision, Flask, NumPy, Pillow.
+**6. Check that the model files exist**
 
-**4. Check the model paths**
-
-`app.py` currently loads the two `.pth` files using absolute paths from the original development machine. Update them to relative paths so the app runs anywhere:
-
-```python
-model.load_state_dict(torch.load("models/trained_model.pth", map_location="cpu"))
-model_1.load_state_dict(torch.load("models/xray_detector.pth", map_location="cpu"))
 ```
+models/trained_model.pth
+models/xray_detector.pth
+```
+
+**7. Check the model paths in `app.py`**
+
+Make sure `app.py` uses project-relative paths, not absolute paths from a personal machine.
 
 ---
 
-## 15. Running the Application
+## Running the Application
 
 ```bash
 python app.py
 ```
 
-Flask will start a local development server, usually at:
+Then open:
 
-```text
+```
 http://127.0.0.1:5000
 ```
 
-Then:
-
-1. Open the URL in a browser.
-2. Upload an image (JPG or PNG, up to 16 MB).
-3. Model 1 checks whether it is a chest X-ray.
-4. If it is, Model 2 predicts NORMAL or PNEUMONIA.
-5. The prediction and confidence score appear on the page.
-
-This is a local development server only. There is no public deployment.
+Upload a JPG or PNG image and view the result.
 
 ---
 
-## 16. Example Prediction Flow
+## Example Prediction Flow
 
-**Example 1 — chest X-ray with no pneumonia**
+**Example 1 — normal chest X-ray**
 
-```text
-Image → Model 1 → chest_xray → Model 2 → NORMAL → confidence score
+```
+Image → Model 1 → chest_xray → Model 2 → NORMAL → Confidence → Grad-CAM → Result shown
 ```
 
-**Example 2 — chest X-ray showing pneumonia**
+**Example 2 — pneumonia chest X-ray**
 
-```text
-Image → Model 1 → chest_xray → Model 2 → PNEUMONIA → confidence score
+```
+Image → Model 1 → chest_xray → Model 2 → PNEUMONIA → Confidence → Grad-CAM → Result shown
 ```
 
-**Example 3 — an unrelated image, such as a car**
+**Example 3 — car image**
 
-```text
-Image → Model 1 → Others → rejected → "Upload only Chest X-Ray photo"
+```
+Image → Model 1 → Others → Rejected → "Please upload a chest X-ray."
 ```
 
----
-
-## 17. Confidence Score
-
-The models output log-probabilities. The app converts them with `torch.exp`, picks the highest value as the prediction, and displays that value as a percentage rounded to two decimal places.
-
-The confidence score is simply **the model's predicted probability for the class it chose**. A high confidence means the model found the image easy to place among the classes it was trained on. It is not a measure of medical certainty, and it does not mean the model is right.
+In the third case, Model 2 does not run and Grad-CAM is not generated.
 
 ---
 
-## 18. Future Scope
+## Results
 
-**Planned next step: brain tumor detection.**
+**Model 1 — Chest X-ray Validator**
 
-Model 1 becomes a general image router with three possible outputs, and each supported image type gets its own specialist model:
+| Metric | Value |
+|---|---|
+| Test accuracy | 99.96% |
+| Correct predictions | 2,490 / 2,491 |
 
-```mermaid
-flowchart TD
-    A["Uploaded image"] --> B["Model 1: image type router"]
-    B -->|"Chest X-ray"| C["Pneumonia model"]
-    B -->|"Brain scan"| D["Brain tumor model"]
-    B -->|"Other"| E["Reject"]
+**Model 2 — Pneumonia Classifier**
+
+| Metric | Value |
+|---|---|
+| Final test accuracy | 95.65% |
+| Best test accuracy during training | 96.33% |
+| Training accuracy | 96.48% |
+
+These numbers come from the specific datasets used in this project. They are not clinical accuracy and they do not describe how the models would behave on real hospital data. Because the Model 2 dataset is imbalanced, accuracy alone is not a complete measure of performance.
+
+---
+
+## Confidence Score
+
+The CNN outputs log-probabilities through `log_softmax`. The application converts them back to probabilities using `torch.exp()`, selects the highest one, and displays it as a percentage.
+
+The confidence score is the model's predicted probability for the class it chose. It is **not**:
+
+- medical certainty
+- diagnostic certainty
+- proof that the prediction is correct
+
+A high confidence score only means the model is confident within the two classes it was trained on.
+
+---
+
+## Limitations
+
+- This is an educational and research project only
+- It is not clinically validated and it is not a medical device
+- It must not be used for real diagnosis or treatment decisions
+- Results depend entirely on the training datasets used
+
+
+- Generalisation to real-world hospital data is unknown
+- Different hospitals, machines, image formats, and patient populations may produce different results
+- Model 1 can only recognise image types that appeared in its training data
+- Grad-CAM explains the model's attention; it does not prove the location or existence of disease
+- The confidence score is not medical certainty
+
+---
+
+## Future Scope
+
+These features are planned, not implemented.
+
+**1. Brain tumor detection**, using the same routing idea:
+
+```
+Uploaded image
+      ↓
+Model 1 / Image Router
+ ├── Chest X-ray → Pneumonia model
+ ├── Brain scan  → Brain tumor model
+ └── Other       → Reject
 ```
 
-The modular design means a new medical image category can be added by training one new model and adding one new route — the rest of the application stays as it is.
+**2. More medical image categories**
 
-Other improvements worth adding:
+**3. Better evaluation** — precision, recall, F1-score, confusion matrix, ROC-AUC
 
-- More medical image categories
-- Better evaluation: precision, recall, F1 score, confusion matrix, ROC curve
-- Model versioning
-- Cloud deployment
-- Improved UI
-- Explainable AI, such as Grad-CAM heatmaps showing which region influenced the prediction
-- More robust and diverse validation datasets
-- A proper JSON API alongside the HTML interface
-- Monitoring and logging
+**4. Model versioning**
 
-None of these are implemented yet.
+**5. Cloud deployment**
 
----
+**6. Improved user interface**
 
-## 19. Limitations
+**7. More robust and diverse validation data**
 
-- This is an **educational and research project**, not a medical diagnosis system.
-- It is **not** clinically validated and must not be used for real patient decisions.
-- The reported accuracies reflect performance on these specific datasets and evaluation splits.
-- The pneumonia dataset is imbalanced (about 73% pneumonia), so accuracy alone can be misleading.
-- The models may not generalise to real-world clinical images from different hospitals, machines, or patient groups.
-- Model 1 can only recognise image types it was trained on. An unusual medical image could still be misrouted.
-- Dataset quality, size, and distribution directly affect the results.
-- Validation on diverse external datasets would be required before any real-world use.
+**8. JSON API**
+
+**9. Monitoring and logging**
 
 ---
 
-## 20. Technologies Used
+## Technologies Used
 
 | Area | Tools |
 |---|---|
 | Language | Python |
 | Deep learning | PyTorch, Torchvision |
-| Image handling | Pillow (PIL), NumPy |
-| Web application | Flask, Jinja2 templates, HTML, CSS, JavaScript |
-| Experimentation | Jupyter Notebook, Matplotlib, torchsummary, tqdm |
-| Version control | Git, GitHub |
+| Web framework | Flask, Jinja2 |
+| Image processing | OpenCV, Pillow, NumPy |
+| Frontend | HTML, CSS, JavaScript |
+| Experimentation | Jupyter Notebook |
+| Machine learning | Custom CNN, image classification, computer vision |
+| Explainability | Grad-CAM |
 
-**Concepts:** Deep Learning · Convolutional Neural Networks · Computer Vision · Image Classification
+Key libraries in `requirements.txt` include Flask, PyTorch, Torchvision, NumPy, OpenCV, Pillow, Jinja2, Matplotlib, and torchsummary.
 
 ---
 
-## 21. Skills and Concepts Demonstrated
+## Skills and Concepts Demonstrated
 
-- Deep learning with custom CNN architectures
-- Image classification and computer vision
-- Data exploration and preprocessing
-- Data augmentation
-- `ImageFolder` datasets and `DataLoader` pipelines
-- Batch Normalization, pooling, global average pooling
-- Learning rate scheduling with `StepLR`
-- Model training, evaluation, and accuracy tracking
-- Saving and loading models with `state_dict`
-- Serving a trained model through a Flask web application
-- Multi-stage model architecture and input validation
-- Git and GitHub
+- Deep learning and CNN design
+- Building a custom CNN from scratch without transfer learning
+- PyTorch training pipeline: loss, optimizer, scheduler, DataLoader
+- Computer vision and image classification
+- Image preprocessing and augmentation
+- Two-stage model design with input validation and gating
+- Explainable AI with Grad-CAM
+- In-memory image handling and Base64 delivery
+- Flask deployment and template rendering
+- Model evaluation and honest reporting of limitations
+
+---
+
+## Disclaimer
+
+This project was built for learning and research purposes. It is not a medical device, it has not been clinically validated, and it is not suitable for real patient diagnosis or treatment decisions. Always consult a qualified medical professional for any health-related question.
+
+---
 
 ## Author
 
-Built by **Vineet Bhatla** · [GitHub repository](https://github.com/vineetbathla8-boop/Lung_Disease-_Detection)
+**Vineet Bathla**
+GitHub: [@vineetbathla8-boop](https://github.com/vineetbathla8-boop)
 
-For research and educational use. Not a substitute for a radiologist's report.
+Repository: [Lung_Disease-_Detection](https://github.com/vineetbathla8-boop/Lung_Disease-_Detection)
